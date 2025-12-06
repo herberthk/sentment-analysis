@@ -1,12 +1,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, ReviewData, ActionableItem, WordFrequency } from "../types";
+import {
+  AnalysisResult,
+  ReviewData,
+  ActionableItem,
+  WordFrequency,
+} from "../types";
 
 // Lazy initialization to avoid top-level side effects during module load
 let aiClient: GoogleGenAI | null = null;
 
 const getAiClient = () => {
   if (!aiClient) {
-    aiClient = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    aiClient = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
   }
   return aiClient;
 };
@@ -16,11 +21,20 @@ const getAiClient = () => {
 const reviewSchema = {
   type: Type.OBJECT,
   properties: {
-    date: { type: Type.STRING, description: "ISO 8601 date string (YYYY-MM-DD)" },
-    sentiment: { type: Type.NUMBER, description: "Sentiment score from 0 (negative) to 100 (positive)" },
-    snippet: { type: Type.STRING, description: "A short, representative snippet of the review" }
+    date: {
+      type: Type.STRING,
+      description: "ISO 8601 date string (YYYY-MM-DD)",
+    },
+    sentiment: {
+      type: Type.NUMBER,
+      description: "Sentiment score from 0 (negative) to 100 (positive)",
+    },
+    snippet: {
+      type: Type.STRING,
+      description: "A short, representative snippet of the review",
+    },
   },
-  required: ["date", "sentiment", "snippet"]
+  required: ["date", "sentiment", "snippet"],
 };
 
 const actionableItemSchema = {
@@ -28,9 +42,9 @@ const actionableItemSchema = {
   properties: {
     title: { type: Type.STRING },
     description: { type: Type.STRING },
-    priority: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
+    priority: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
   },
-  required: ["title", "description", "priority"]
+  required: ["title", "description", "priority"],
 };
 
 const wordFrequencySchema = {
@@ -38,9 +52,9 @@ const wordFrequencySchema = {
   properties: {
     text: { type: Type.STRING },
     value: { type: Type.NUMBER },
-    sentiment: { type: Type.STRING, enum: ["positive", "negative", "neutral"] }
+    sentiment: { type: Type.STRING, enum: ["positive", "negative", "neutral"] },
   },
-  required: ["text", "value", "sentiment"]
+  required: ["text", "value", "sentiment"],
 };
 
 const analysisResponseSchema = {
@@ -48,25 +62,33 @@ const analysisResponseSchema = {
   properties: {
     reviews: {
       type: Type.ARRAY,
-      items: reviewSchema
+      items: reviewSchema,
     },
     summary: {
       type: Type.ARRAY,
-      items: actionableItemSchema
+      items: actionableItemSchema,
     },
     wordCloud: {
       type: Type.ARRAY,
-      items: wordFrequencySchema
+      items: wordFrequencySchema,
     },
     overallSentiment: { type: Type.NUMBER },
-    totalReviews: { type: Type.NUMBER }
+    totalReviews: { type: Type.NUMBER },
   },
-  required: ["reviews", "summary", "wordCloud", "overallSentiment", "totalReviews"]
+  required: [
+    "reviews",
+    "summary",
+    "wordCloud",
+    "overallSentiment",
+    "totalReviews",
+  ],
 };
 
-export const analyzeReviews = async (rawText: string): Promise<AnalysisResult> => {
+export const analyzeReviews = async (
+  rawText: string
+): Promise<AnalysisResult> => {
   // Use Gemini 3 Pro with Thinking for deep analysis of unstructured data
-  const model = "gemini-3-pro-preview";
+  const model = "gemini-2.5-flash-preview-09-2025";
   const ai = getAiClient();
 
   const prompt = `
@@ -80,7 +102,10 @@ export const analyzeReviews = async (rawText: string): Promise<AnalysisResult> =
     5. Calculate the overall average sentiment.
     
     Raw Reviews Data:
-    ${rawText.slice(0, 100000)} // Limit input to avoid token limits if extremely large, though Pro handles large context.
+    ${rawText.slice(
+      0,
+      100000
+    )} // Limit input to avoid token limits if extremely large, though Pro handles large context.
   `;
 
   try {
@@ -91,14 +116,14 @@ export const analyzeReviews = async (rawText: string): Promise<AnalysisResult> =
         responseMimeType: "application/json",
         responseSchema: analysisResponseSchema,
         thinkingConfig: {
-            thinkingBudget: 32768, // Max thinking budget for deep analysis
-        }
+          thinkingBudget: 24576, // Max thinking budget for deep analysis
+        },
       },
     });
 
     const text = response.text;
     if (!text) throw new Error("No response from AI");
-    
+
     return JSON.parse(text) as AnalysisResult;
   } catch (error) {
     console.error("Analysis failed:", error);
@@ -110,19 +135,22 @@ export const streamChatResponse = async function* (
   history: { role: string; content: string }[],
   contextData: AnalysisResult | null
 ) {
-  const model = "gemini-3-pro-preview";
+  const model = "gemini-2.5-flash-preview-09-2025";
   const ai = getAiClient();
-  
+
   // Prepare system instruction with context
-  let systemInstruction = "You are a helpful assistant for the Sentilens Dashboard. You help users understand their customer reviews.";
-  
+  let systemInstruction =
+    "You are a helpful assistant for the Sentilens Dashboard. You help users understand their customer reviews.";
+
   if (contextData) {
     systemInstruction += `
       Current Dashboard Context:
       - Overall Sentiment: ${contextData.overallSentiment}/100
       - Total Reviews: ${contextData.totalReviews}
-      - Top Complaints/Praises: ${contextData.wordCloud.map(w => w.text).join(', ')}
-      - Key Action Items: ${contextData.summary.map(s => s.title).join(', ')}
+      - Top Complaints/Praises: ${contextData.wordCloud
+        .map((w) => w.text)
+        .join(", ")}
+      - Key Action Items: ${contextData.summary.map((s) => s.title).join(", ")}
       
       When answering, refer to specific insights from this data. Use the Thinking capability to reason through complex questions about trends or root causes if asked.
     `;
@@ -138,10 +166,10 @@ export const streamChatResponse = async function* (
     config: {
       systemInstruction,
       thinkingConfig: {
-        thinkingBudget: 32768
-      }
+        thinkingBudget: 24576,
+      },
     },
-    history: previousHistory.map(h => ({
+    history: previousHistory.map((h) => ({
       role: h.role,
       parts: [{ text: h.content }],
     })),
